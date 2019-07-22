@@ -1,0 +1,5 @@
+﻿<?xml version="1.0" encoding="UTF-8" ?>
+<cipher>
+    <iv>{Random 16 characters}</iv>
+    <salt>{Random string}</salt>
+</cipher>
