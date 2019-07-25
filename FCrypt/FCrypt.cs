@@ -1,26 +1,9 @@
-﻿using System;
-using System.IO;
-using System.Reflection;
+﻿using System.IO;
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
-using System.Xml.Linq;
-using System.Xml.XPath;
 
 namespace FCrypt {
-
-    /// <summary>
-    /// AES type
-    /// </summary>
-    public enum CipherType {
-        /// <summary>
-        /// AES 128bit
-        /// </summary>
-        AES128 = 16,
-        /// <summary>
-        /// AES 256bit
-        /// </summary>
-        AES256 = 32
-    }
 
     /// <summary>
     /// Encrypts and Decrypts file.
@@ -28,34 +11,37 @@ namespace FCrypt {
     public class FCrypt {
 
         /// <summary>
-        /// Initial vector
-        /// </summary>
-        private static readonly byte[] aesIV;
-        /// <summary>
         /// Salt value
         /// </summary>
         private static readonly byte[] keySalt;
+        /// <summary>
+        /// Key size (bit)
+        /// </summary>
+        const int KeySize = 256;
+        /// <summary>
+        /// Block size (bit)
+        /// </summary>
+        const int BlockSize = 128;
+        /// <summary>
+        /// Buffer size (256KiB)
+        /// </summary>
+        const int BufferSize = 1024 * 256;
+
 
         /// <summary>
         /// Initializes
         /// </summary>
         static FCrypt() {
             var encoder = new UTF8Encoding();
-            var assembly = Assembly.GetExecutingAssembly();
-            using( Stream stream = assembly.GetManifestResourceStream( "FCrypt.option.xml" ) ) {
-                var xml = XDocument.Load( stream );
-                aesIV = encoder.GetBytes( xml.XPathSelectElement( "/cipher/iv" ).Value );
-                keySalt = encoder.GetBytes( xml.XPathSelectElement( "/cipher/salt" ).Value );
-            }
+            keySalt = encoder.GetBytes( "8HRd1vfMHOAKgIg5lS6A+uma6C10cjPhd0pDAN8WJYA=" );
         }
 
         /// <summary>
         /// Generates a key
         /// </summary>
         /// <param name="password">Password</param>
-        /// <param name="cipherType">Cipher type (AES 128bit or AES 256bit)</param>
         /// <returns>Key for AES</returns>
-        private static byte[] GenerateKey( string password, CipherType cipherType ) => new Rfc2898DeriveBytes( password, keySalt, 1000 ).GetBytes( ( int )cipherType );
+        private static byte[] GenerateKey( string password ) => new Rfc2898DeriveBytes( password, keySalt, 1000 ).GetBytes( KeySize / 8 );
 
         /// <summary>
         /// Encrypts a file
@@ -63,29 +49,38 @@ namespace FCrypt {
         /// <param name="inputFilePath">Original file path</param>
         /// <param name="outputFilePath">Encrypted file path</param>
         /// <param name="password">Password</param>
-        /// <param name="cipherType">Cipher type (AES 128bit or AES 256bit)</param>
-        public static void Encrypt( string inputFilePath, string outputFilePath, string password, CipherType cipherType = CipherType.AES128 ) {
-            var key = GenerateKey( password, cipherType );
+        public static void Encrypt( string inputFilePath, string outputFilePath, string password ) {
+            var key = GenerateKey( password );
 
             var cipher = new AesManaged {
-                KeySize = ( int )cipherType * 8,
+                KeySize = KeySize,
                 Key = key,
-                BlockSize = 128,
+                BlockSize = BlockSize,
                 Mode = CipherMode.CBC,
-                IV = aesIV,
                 Padding = PaddingMode.PKCS7
             };
+            cipher.GenerateIV();
 
+            /**
+             * 1. Reads the ogrinal data. (FileStream)
+             * 2. Writes a initial vector. (FileStream)
+             * 3. Compresses the encrypted data. (DeflateStream)
+             * 4. Encrypts the data. (CryptoStream)
+             * 5. Writes the compressed data. (FileStream)
+             */
             using( var ifs = new FileStream( inputFilePath, FileMode.Open, FileAccess.Read ) ) {
-                var ibuf = new byte[ifs.Length];
-                ifs.Read( ibuf, 0, ibuf.Length );
-
-                var obuf = cipher.CreateEncryptor().TransformFinalBlock( ibuf, 0, ibuf.Length );
-
                 using( var ofs = new FileStream( outputFilePath, FileMode.Create, FileAccess.Write ) ) {
-                    var headBuf = BitConverter.GetBytes( ( int )cipherType );
-                    ofs.Write( headBuf, 0, headBuf.Length );
-                    ofs.Write( obuf, 0, obuf.Length );
+                    ofs.Write( cipher.IV, 0, cipher.IV.Length );
+                    using( var encryptor = cipher.CreateEncryptor() ) {
+                        using( var ocfs = new CryptoStream( ofs, encryptor, CryptoStreamMode.Write ) ) {
+                            using( var odcfs = new DeflateStream( ocfs, CompressionMode.Compress, true ) ) {
+                                var buf = new byte[BufferSize];
+                                for( int size = ifs.Read( buf, 0, buf.Length ); size > 0; size = ifs.Read( buf, 0, buf.Length ) ) {
+                                    odcfs.Write( buf, 0, size );
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -99,28 +94,30 @@ namespace FCrypt {
         public static void Decrypt( string inputFilePath, string outputFilePath, string password ) {
 
             using( var ifs = new FileStream( inputFilePath, FileMode.Open, FileAccess.Read ) ) {
-                var headBuf = new byte[sizeof( int )];
-                var ibuf = new byte[ifs.Length - headBuf.Length];
+                var headBuf = new byte[BlockSize / 8];
                 ifs.Read( headBuf, 0, headBuf.Length );
-                ifs.Read( ibuf, 0, ibuf.Length );
-
-                var cipherType = ( CipherType )BitConverter.ToInt32( headBuf );
-
-                var key = GenerateKey( password, cipherType );
+                var key = GenerateKey( password );
 
                 var cipher = new AesManaged {
-                    KeySize = ( int )cipherType * 8,
+                    KeySize = KeySize,
                     Key = key,
-                    BlockSize = 128,
+                    BlockSize = BlockSize,
                     Mode = CipherMode.CBC,
-                    IV = aesIV,
+                    IV = headBuf,
                     Padding = PaddingMode.PKCS7
                 };
 
-                var obuf = cipher.CreateDecryptor().TransformFinalBlock( ibuf, 0, ibuf.Length );
-
-                using( var ofs = new FileStream( outputFilePath, FileMode.Create, FileAccess.Write ) ) {
-                    ofs.Write( obuf, 0, obuf.Length );
+                using( var decryptor = cipher.CreateDecryptor() ) {
+                    using( var icfs = new CryptoStream( ifs, decryptor, CryptoStreamMode.Read ) ) {
+                        using( var idcfs = new DeflateStream( icfs, CompressionMode.Decompress, true ) ) {
+                            using( var ofs = new FileStream( outputFilePath, FileMode.Create, FileAccess.Write ) ) {
+                                var buf = new byte[BufferSize];
+                                for( int size = idcfs.Read( buf, 0, buf.Length ); size > 0; size = idcfs.Read( buf, 0, buf.Length ) ) {
+                                    ofs.Write( buf, 0, size );
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

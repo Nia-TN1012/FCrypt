@@ -5,10 +5,4 @@
     <TargetFramework>netcoreapp2.2</TargetFramework>
   </PropertyGroup>
 
-  <ItemGroup>
-    <None Remove="option.xml" />
-  </ItemGroup>
-  <ItemGroup>
-    <EmbeddedResource Include="option.xml" />
-  </ItemGroup>
 </Project>

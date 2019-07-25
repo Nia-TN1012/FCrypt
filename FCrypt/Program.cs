@@ -17,9 +17,9 @@ namespace FCrypt {
 
         static int Main( string[] args ) {
 
-            var (encDec, inputFilePath, outputFilePath, password, cipherType) = ParseCommand( args );
+            var (encDec, inputFilePath, outputFilePath, password) = ParseCommand( args );
             if( encDec == EncryptOrDecrypt.Unknown || string.IsNullOrEmpty( inputFilePath ) ) {
-                Console.WriteLine( "Usage: FCrypt -e|-d -i InputFilePath [-o OutputFilePath] [-p Password] [-m aes128|aes256]" );
+                Console.WriteLine( "Usage: FCrypt -e|-d -i InputFilePath [-o OutputFilePath] [-p Password]" );
                 Console.WriteLine();
                 Console.WriteLine( "  -e\t\t\tEncrypt" );
                 Console.WriteLine( "  -d\t\t\tDecrypt" );
@@ -27,7 +27,6 @@ namespace FCrypt {
                 Console.WriteLine( "    -i InputFilePath\tOriginal file path" );
                 Console.WriteLine( "    -o OutputFilePath\tEncrypted file path (If empty, {InputFilePath}.fcrypt)" );
                 Console.WriteLine( "    -p Password\t\tPassword (If empty, it will be prompted for input.)" );
-                Console.WriteLine( "    -m ase128|aes256\t（Encrypt only）AES type (Default: aes128)" );
                 Console.WriteLine( "  <Decrypt>" );
                 Console.WriteLine( "    -i InputFilePath\tEncrypted file path" );
                 Console.WriteLine( "    -o OutputFilePath\tDecrypted file path (If empty, {InputFilePath} without '.fcrypt')" );
@@ -72,7 +71,7 @@ namespace FCrypt {
                 switch( encDec ) {
                     case EncryptOrDecrypt.Encrypt:
                         Console.WriteLine( $"Encrypting file: {inputFilePath}" );
-                        FCrypt.Encrypt( inputFilePath, outputFilePath, password, cipherType );
+                        FCrypt.Encrypt( inputFilePath, outputFilePath, password );
                         Console.WriteLine( $"Encrypted -> {outputFilePath}" );
                         break;
                     case EncryptOrDecrypt.Decrypt:
@@ -82,8 +81,12 @@ namespace FCrypt {
                         break;
                 }
             }
-            catch( Exception ) {
+            catch( Exception ex ) {
                 Console.WriteLine( $"Failed to {encDec.ToString()}." );
+#if DEBUG
+                Console.WriteLine( $"Message: {ex.Message}" );
+                Console.WriteLine( $"Message: {ex.StackTrace}" );
+#endif
             }
 
             return 0;
@@ -96,12 +99,11 @@ namespace FCrypt {
         /// </summary>
         /// <param name="args">Command line argments</param>
         /// <returns></returns>
-        static (EncryptOrDecrypt mode, string inputFilePath, string outputFilePath, string password, CipherType cipherType) ParseCommand( string[] args ) {
+        static (EncryptOrDecrypt mode, string inputFilePath, string outputFilePath, string password) ParseCommand( string[] args ) {
             EncryptOrDecrypt mode = EncryptOrDecrypt.Unknown;
             string inputFilePath = null;
             string outputFilePath = null;
             string password = null;
-            CipherType cipherType = CipherType.AES128;
 
             string argKey = "";
             for( int i = 0; i < args.Length; i++ ) {
@@ -119,7 +121,6 @@ namespace FCrypt {
                     case "-i":
                     case "-o":
                     case "-p":
-                    case "-m":
                         argKey = args[i];
                         break;
                     default:
@@ -137,15 +138,12 @@ namespace FCrypt {
                             case "-p":
                                 password = args[i];
                                 break;
-                            case "-m":
-                                cipherType = args[i] == "aes256" ? CipherType.AES256 : CipherType.AES128;
-                                break;
                         }
                         break;
                 }
             }
 
-            return ( mode, inputFilePath, outputFilePath, password, cipherType );
+            return ( mode, inputFilePath, outputFilePath, password );
         }
 
         /// <summary>
