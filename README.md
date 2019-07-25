@@ -5,7 +5,7 @@ Program to encrypt and decrypt files (C#)
 
 |||
 |:---:|---|
-|Cipher algorithum|AES|
+|Cipher algorithm|AES|
 |Key size|256 bit|
 |Block size|128 bit|
 |Crypto mode|CBC|
